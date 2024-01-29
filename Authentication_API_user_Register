@@ -1,77 +1,99 @@
 const express = require('express')
-const path = require('path')
 const {open} = require('sqlite')
 const sqlite3 = require('sqlite3')
+const path = require('path')
 const bcrypt = require('bcrypt')
+
+let database = null
 const app = express()
+const databasePath = path.join(__dirname, 'userData.db')
 app.use(express.json())
-const dbPath = path.join(__dirname, 'goodreads.db')
 
-let db = null
-
-const initializeDBAndServer = async () => {
+const initializeDbAndServer = async () => {
   try {
-    db = await open({
-      filename: dbPath,
+    database = await open({
+      filename: databasePath,
       driver: sqlite3.Database,
     })
-    app.listen(3000, () => {
-      console.log('Server Running at http://localhost:3000/')
-    })
-  } catch (e) {
-    console.log(`DB Error: ${e.message}`)
+    app.listen(3000, () =>
+      console.log('Server Running at http://localhost:3000/'),
+    )
+  } catch (error) {
+    console.log(`DB Error: ${error.message}`)
     process.exit(1)
   }
 }
-initializeDBAndServer()
 
-// Get Books API
-app.get('/books/', async (request, response) => {
-  const getBooksQuery = `
-  SELECT
-    *
-  FROM
-    book
-  ORDER BY
-    book_id;`
-  const booksArray = await db.all(getBooksQuery)
-  response.send(booksArray)
-})
+initializeDbAndServer()
+//API 1 register_page
 
-//API user_Register
-
-app.post('/users/', async (request, response) => {
+app.post('/register/', async (request, response) => {
   const {username, name, password, gender, location} = request.body
-  const hashpassword = await bcrypt.hash(password, 10)
-  const userquery = `select * from user where username='${username}';`
-  const dbquery = await db.get(userquery)
-  if (dbquery === undefined) {
+  const hashpass = await bcrypt.hash(request.body.password, 10)
+  const register = `SELECT * FROM user WHERE username = '${username}'`
+  const dbuser = await database.get(register)
+  if (dbuser === undefined) {
     const createuser = `
-    insert into user(username, name,password, gender,location)
-    values('${username}','${name}','${hashpassword}','${gender}','${location}');`
-    await db.run(createuser)
-    response.send('user created sucessfully')
+    insert into user(username, name, password, gender, location)
+    values('${username}', '${name}','${hashpass}', '${gender}','${location}');`
+
+    if (password.length < 5) {
+      function rk(na) {
+        return 'Password is too short'
+      }
+      response.send(rk(''))
+    } else {
+      await database.run(createuser)
+      response.send('User created successfully')
+    }
   } else {
-    response.status(400)
-    response.send('user already existed')
+    function rk(na) {
+      return 'User already exists'
+    }
+    response.send(rk(''))
   }
 })
+//API 2 login_page
 
-//API login_page
 app.post('/login/', async (request, response) => {
   const {username, password} = request.body
-  const loginquery = `select * from user where username='${username}';`
-  const dbuser = await db.run(loginquery)
-  if (dbuser === undefined) {
-    response.status(400)
-    response.send('invalid user')
+  const login = `SELECT * FROM user WHERE username = '${username}'`
+  const dblogin = await database.get(login)
+  if (dblogin === undefined) {
+    function rk(na) {
+      return 'Invalid user'
+    }
+    response.send(rk(''))
   } else {
-    const ispassword = await bcrypt.compare(password, dbuser.password)
-    if (ispassword === true) {
-      response.send('user login!')
+    const match = await bcrypt.compare(password, dblogin.password)
+    if (match === true) {
+      response.send('Login success!')
     } else {
-      response.status(400)
-      response.send('Invalid password')
+      function rk(na) {
+        return 'Invalid password'
+      }
+      response.send(rk(''))
     }
   }
 })
+//API 3 change_password
+
+app.put('/change-password/', async (request, response) => {
+  const {username, oldPassword, newPassword} = request.body
+  const pass = `SELECT * FROM user WHERE username = '${username}'`
+  const dbpass = await database.get(pass)
+  const newpass = await bcrypt.hash(request.body.newPassword, 10)
+  if (newPassword.length < 5) {
+    response.send('Password is too short')
+  } else {
+    const match = await bcrypt.compare(oldPassword, dbpass.password)
+    if (match === true) {
+      const updatequery = `update user set password='${newpass}' where username='${username}';`
+      await database.run(updatequery)
+      response.send('Password updated')
+    } else {
+      response.send('Invalid current password')
+    }
+  }
+})
+module.exports = app
